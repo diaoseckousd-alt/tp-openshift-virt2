@@ -6,7 +6,6 @@ metadata:
   labels:
     app: vm1-pfsense
     role: firewall-gateway
-    vm.kubevirt.io/template: fedora-server-small
 spec:
   runStrategy: Always
   template:
@@ -33,20 +32,15 @@ spec:
                 bus: virtio
               name: cloudinitdisk
           interfaces:
-            # eth0: LAN (Réseau Pod interne par défaut)
             - name: nic-lan
               masquerade: {}
               model: virtio
-            # eth1: DMZ
             - name: nic-dmz
               bridge: {} 
               model: virtio
-            # eth2: WAN
             - name: nic-wan
               bridge: {}
               model: virtio
-          networkInterfaceMultiqueue: true
-          rng: {}
       networks:
         - name: nic-lan
           pod: {}
@@ -64,26 +58,18 @@ spec:
             userData: |
               #cloud-config
               hostname: vm1-pfsense
-              chpasswd:
-                expire: false
-                password: Pfsense123!
+              chpasswd: { expire: false }
+              password: Pfsense123!
               user: fedora
               runcmd:
                 - dnf install -y iptables iptables-services
                 - systemctl enable --now iptables
-                # Activation du Forwarding IP
                 - echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
                 - sysctl -p
-                # Configuration réseau via NetworkManager (nmcli)
-                # eth0 est géré par DHCP (OpenShift Pod Network)
-                # eth1 (DMZ) - IP Statique exemple
                 - nmcli con add type ethernet con-name dmz ifname eth1 ipv4.method manual ipv4.addresses 192.168.10.1/24
-                # eth2 (WAN) - DHCP (ou IP publique)
                 - nmcli con add type ethernet con-name wan ifname eth2 ipv4.method dhcp
-                # NAT : On masque tout ce qui sort vers Internet via le WAN (eth2)
                 - iptables -t nat -A POSTROUTING -o eth2 -j MASQUERADE
                 - service iptables save
-              final_message: "Gateway Fedora avec 3 interfaces (LAN, DMZ, WAN) prête."
           name: cloudinitdisk
   dataVolumeTemplates:
     - apiVersion: cdi.kubevirt.io/v1beta1

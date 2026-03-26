@@ -52,3 +52,20 @@ spec:
         - podSelector:
             matchLabels:
               app: nginx-web
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-routing
+  namespace: seckou-dev
+spec:
+  podSelector:
+    matchLabels:
+      role: firewall-gateway
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - {}
+  egress:
+  - {}

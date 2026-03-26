@@ -29,54 +29,28 @@ jobs:
             --token=${{ secrets.OC_TOKEN }} \
             --server=${{ secrets.OC_SERVER }} \
             --insecure-skip-tls-verify=true
-          echo "✅ Connecté : $(oc whoami)"
           oc project ${{ env.NAMESPACE }}
+
+      - name: 🌐 Déploiement des réseaux Multus (NAD)
+        run: |
+          oc apply -f network/multus-networks.yaml -n ${{ env.NAMESPACE }}
+          echo "✅ Réseaux DMZ et WAN créés"
 
       - name: 🔒 Déploiement NetworkPolicies
         run: |
           oc apply -f network/networkpolicy.yaml -n ${{ env.NAMESPACE }}
-          echo "✅ NetworkPolicies appliquées"
-          oc get networkpolicy -n ${{ env.NAMESPACE }}
 
-      - name: 🖥️ Déploiement VM1 pfSense (VirtualMachine)
+      - name: 🖥️ Déploiement VM1 pfSense
         run: |
+          # On supprime pour débloquer le VolumeBinding si erreur précédente
+          oc delete vm vm1-pfsense -n ${{ env.NAMESPACE }} --ignore-not-found
           oc apply -f vms/vm1-pfsense/virtualmachine.yaml -n ${{ env.NAMESPACE }}
-          echo "✅ VM1 pfSense créée"
-          oc get vm vm1-pfsense -n ${{ env.NAMESPACE }}
+          echo "✅ VM1 pfSense déployée"
 
-      - name: 🗄️ Déploiement VM2 MySQL (VirtualMachine)
+      - name: 🗄️ Déploiement VM2 MySQL
         run: |
           oc apply -f vms/vm2-mysql/virtualmachine.yaml -n ${{ env.NAMESPACE }}
-          echo "✅ VM2 MySQL créée"
-          oc get vm vm2-mysql -n ${{ env.NAMESPACE }}
 
-      - name: 🌍 Déploiement Nginx + Node.js (Conteneur)
+      - name: 🌍 Déploiement Nginx (Conteneur)
         run: |
           oc apply -f conteneur/nginx/ -n ${{ env.NAMESPACE }}
-          echo "✅ Conteneur Nginx déployé"
-          oc get pods -l app=nginx-web -n ${{ env.NAMESPACE }}
-
-      - name: 📋 Résumé final
-        run: |
-          echo ""
-          echo "╔══════════════════════════════════════════════════════════╗"
-          echo "║        TP OpenShift - Architecture Hybride               ║"
-          echo "╠══════════════════════════════════════════════════════════╣"
-          echo ""
-          echo "=== 🖥️  VMs OpenShift Virtualization ==="
-          oc get vm -n ${{ env.NAMESPACE }}
-          echo ""
-          echo "=== 🐳 Conteneurs ==="
-          oc get pods -l app=nginx-web -n ${{ env.NAMESPACE }}
-          echo ""
-          echo "=== 🌐 Route publique ==="
-          oc get route nginx-web-route -n ${{ env.NAMESPACE }}
-          echo ""
-          echo "=== 🔒 NetworkPolicies ==="
-          oc get networkpolicy -n ${{ env.NAMESPACE }}
-          echo ""
-          echo "╠══════════════════════════════════════════════════════════╣"
-          echo "║  VM1  pfSense  → VirtualMachine Fedora (Firewall)       ║"
-          echo "║  VM2  MySQL    → VirtualMachine Fedora (Base de données) ║"
-          echo "║  Nginx+Node.js → Conteneur OpenShift (Serveur Web)      ║"
-          echo "╚══════════════════════════════════════════════════════════╝"
