@@ -7,27 +7,22 @@ metadata:
     app: vm1-pfsense
     role: firewall-gateway
     vm.kubevirt.io/template: fedora-server-small
-    vm.kubevirt.io/template.namespace: openshift
 spec:
   runStrategy: Always
   template:
     metadata:
-      annotations:
-        vm.kubevirt.io/flavor: small
-        vm.kubevirt.io/os: fedora
-        vm.kubevirt.io/workload: server
       labels:
         kubevirt.io/domain: vm1-pfsense
-        kubevirt.io/size: small
-        network.kubevirt.io/headlessService: headless
         role: firewall-gateway
     spec:
-      architecture: amd64
       domain:
         cpu:
           cores: 1
           sockets: 1
           threads: 1
+        resources:
+          limits:
+            memory: 2Gi
         devices:
           disks:
             - bootOrder: 1
@@ -38,33 +33,29 @@ spec:
                 bus: virtio
               name: cloudinitdisk
           interfaces:
-            - masquerade: {}
+            # eth0: LAN (Réseau Pod interne par défaut)
+            - name: nic-lan
+              masquerade: {}
               model: virtio
-              name: default
+            # eth1: DMZ
+            - name: nic-dmz
+              bridge: {} 
+              model: virtio
+            # eth2: WAN
+            - name: nic-wan
+              bridge: {}
+              model: virtio
           networkInterfaceMultiqueue: true
           rng: {}
-        features:
-          acpi: {}
-          smm:
-            enabled: true
-        firmware:
-          bootloader:
-            efi: {}
-        machine:
-          type: pc-q35-rhel9.2.0
-        memory:
-          guest: 2Gi
-        resources:
-          limits:
-            memory: 2Gi
       networks:
-        - name: default
+        - name: nic-lan
           pod: {}
-      terminationGracePeriodSeconds: 180
-      tolerations:
-        - effect: NoSchedule
-          key: sandbox-cnv
-          operator: Exists
+        - name: nic-dmz
+          multus:
+            networkName: dmz-network
+        - name: nic-wan
+          multus:
+            networkName: wan-network
       volumes:
         - dataVolume:
             name: vm1-pfsense-disk
@@ -75,21 +66,24 @@ spec:
               hostname: vm1-pfsense
               chpasswd:
                 expire: false
-              password: Pfsense123!
+                password: Pfsense123!
               user: fedora
-              # Installation iptables comme firewall/gateway
               runcmd:
-                - dnf install -y iptables iptables-services nftables
-                - systemctl enable iptables
+                - dnf install -y iptables iptables-services
+                - systemctl enable --now iptables
+                # Activation du Forwarding IP
                 - echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
                 - sysctl -p
-                # Règles NAT/firewall de base
-                - iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-                - iptables -A FORWARD -i eth0 -o eth0 -m state --state RELATED,ESTABLISHED -j ACCEPT
-                - iptables -A FORWARD -j ACCEPT
+                # Configuration réseau via NetworkManager (nmcli)
+                # eth0 est géré par DHCP (OpenShift Pod Network)
+                # eth1 (DMZ) - IP Statique exemple
+                - nmcli con add type ethernet con-name dmz ifname eth1 ipv4.method manual ipv4.addresses 192.168.10.1/24
+                # eth2 (WAN) - DHCP (ou IP publique)
+                - nmcli con add type ethernet con-name wan ifname eth2 ipv4.method dhcp
+                # NAT : On masque tout ce qui sort vers Internet via le WAN (eth2)
+                - iptables -t nat -A POSTROUTING -o eth2 -j MASQUERADE
                 - service iptables save
-                - systemctl start iptables
-              final_message: "VM1 Firewall/Gateway opérationnel!"
+              final_message: "Gateway Fedora avec 3 interfaces (LAN, DMZ, WAN) prête."
           name: cloudinitdisk
   dataVolumeTemplates:
     - apiVersion: cdi.kubevirt.io/v1beta1
