@@ -1,42 +1,11 @@
----
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: deny-by-default
+  name: allow-all-ingress
   namespace: seckou-dev
 spec:
   podSelector: {}
-  policyTypes: [Ingress]
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-nginx-to-mysql
-  namespace: seckou-dev
-spec:
-  podSelector:
-    matchLabels:
-      kubevirt.io/domain: vm2-mysql
   ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: nginx-web
-      ports:
-        - protocol: TCP
-          port: 3306
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-ingress-to-nginx
-  namespace: seckou-dev
-spec:
-  podSelector:
-    matchLabels:
-      app: nginx-web
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              network.openshift.io/policy-group: ingress
+  - {}
+  policyTypes:
+  - Ingress

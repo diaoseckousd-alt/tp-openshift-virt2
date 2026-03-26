@@ -41,5 +41,6 @@ jobs:
           oc apply -f vms/vm1-pfsense/virtualmachine.yaml -n ${{ env.NAMESPACE }}
           oc apply -f vms/vm2-mysql/virtualmachine.yaml -n ${{ env.NAMESPACE }}
 
-      - name: 🌍 Deploy App Nginx
-        run: oc apply -f conteneur/nginx/ -n ${{ env.NAMESPACE }}
+      - name: 🌍 Déploiement Nginx et Config
+        run: |
+          oc apply -f conteneur/nginx/deployment.yaml -n ${{ env.NAMESPACE }}
