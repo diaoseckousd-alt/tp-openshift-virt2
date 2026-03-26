@@ -2,55 +2,44 @@ name: Deploy Infrastructure Hybride OpenShift
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
 
 env:
   NAMESPACE: seckou-dev
 
 jobs:
   deploy:
-    name: Déploiement sur OpenShift
     runs-on: ubuntu-latest
-
     steps:
-      - name: 📥 Checkout du code
+      - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: 🔧 Installation CLI OpenShift
+      - name: 🔧 Install CLI OpenShift
         uses: redhat-actions/openshift-tools-installer@v1
         with:
           oc: latest
 
-      - name: 🔐 Connexion au cluster OpenShift
+      - name: 🔐 Login OpenShift
         run: |
-          oc login \
-            --token=${{ secrets.OC_TOKEN }} \
-            --server=${{ secrets.OC_SERVER }} \
-            --insecure-skip-tls-verify=true
+          oc login --token=${{ secrets.OC_TOKEN }} --server=${{ secrets.OC_SERVER }} --insecure-skip-tls-verify=true
           oc project ${{ env.NAMESPACE }}
 
-      - name: 🌐 Déploiement des réseaux Multus (NAD)
-        run: |
-          oc apply -f network/multus-networks.yaml -n ${{ env.NAMESPACE }}
-          echo "✅ Réseaux DMZ et WAN créés"
+      - name: 🔒 Deploy NetworkPolicies
+        run: oc apply -f network/networkpolicy.yaml -n ${{ env.NAMESPACE }}
 
-      - name: 🔒 Déploiement NetworkPolicies
+      - name: 🖥️ Deploy VMs (Sandbox Mode)
         run: |
-          oc apply -f network/networkpolicy.yaml -n ${{ env.NAMESPACE }}
-
-      - name: 🖥️ Déploiement VM1 pfSense
-        run: |
-          # On supprime pour débloquer le VolumeBinding si erreur précédente
-          oc delete vm vm1-pfsense -n ${{ env.NAMESPACE }} --ignore-not-found
+          # Suppression des anciennes instances pour nettoyer les erreurs de volume
+          oc delete vm vm1-pfsense --ignore-not-found
+          oc delete vm vm2-mysql --ignore-not-found
+          
           oc apply -f vms/vm1-pfsense/virtualmachine.yaml -n ${{ env.NAMESPACE }}
-          echo "✅ VM1 pfSense déployée"
-
-      - name: 🗄️ Déploiement VM2 MySQL
-        run: |
           oc apply -f vms/vm2-mysql/virtualmachine.yaml -n ${{ env.NAMESPACE }}
 
-      - name: 🌍 Déploiement Nginx (Conteneur)
-        run: |
-          oc apply -f conteneur/nginx/ -n ${{ env.NAMESPACE }}
+      - name: 🌍 Deploy App Nginx
+        run: oc apply -f conteneur/nginx/ -n ${{ env.NAMESPACE }}

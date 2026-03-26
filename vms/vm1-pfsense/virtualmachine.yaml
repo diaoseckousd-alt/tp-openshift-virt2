@@ -4,7 +4,6 @@ metadata:
   name: vm1-pfsense
   namespace: seckou-dev
   labels:
-    app: vm1-pfsense
     role: firewall-gateway
 spec:
   runStrategy: Always
@@ -17,39 +16,23 @@ spec:
       domain:
         cpu:
           cores: 1
-          sockets: 1
-          threads: 1
         resources:
           limits:
             memory: 2Gi
         devices:
           disks:
             - bootOrder: 1
-              disk:
-                bus: virtio
+              disk: { bus: virtio }
               name: rootdisk
-            - disk:
-                bus: virtio
+            - disk: { bus: virtio }
               name: cloudinitdisk
           interfaces:
-            - name: nic-lan
+            - name: default
               masquerade: {}
               model: virtio
-            - name: nic-dmz
-              bridge: {} 
-              model: virtio
-            - name: nic-wan
-              bridge: {}
-              model: virtio
       networks:
-        - name: nic-lan
+        - name: default
           pod: {}
-        - name: nic-dmz
-          multus:
-            networkName: dmz-network
-        - name: nic-wan
-          multus:
-            networkName: wan-network
       volumes:
         - dataVolume:
             name: vm1-pfsense-disk
@@ -62,13 +45,11 @@ spec:
               password: Pfsense123!
               user: fedora
               runcmd:
-                - dnf install -y iptables iptables-services
+                - dnf install -y iptables-services
                 - systemctl enable --now iptables
                 - echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
                 - sysctl -p
-                - nmcli con add type ethernet con-name dmz ifname eth1 ipv4.method manual ipv4.addresses 192.168.10.1/24
-                - nmcli con add type ethernet con-name wan ifname eth2 ipv4.method dhcp
-                - iptables -t nat -A POSTROUTING -o eth2 -j MASQUERADE
+                - iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
                 - service iptables save
           name: cloudinitdisk
   dataVolumeTemplates:
