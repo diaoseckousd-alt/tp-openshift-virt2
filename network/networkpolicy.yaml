@@ -1,0 +1,54 @@
+---
+# NetworkPolicy 1 : Nginx peut accéder à MySQL (VM2)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-nginx-to-mysql
+  namespace: seckou-dev
+spec:
+  podSelector:
+    matchLabels:
+      app: nginx-web
+  policyTypes:
+    - Egress
+  egress:
+    - {}
+
+---
+# NetworkPolicy 2 : Nginx accessible depuis Internet (port 80)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-internet-to-nginx
+  namespace: seckou-dev
+spec:
+  podSelector:
+    matchLabels:
+      app: nginx-web
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+
+---
+# NetworkPolicy 3 : Bloquer accès direct Internet vers MySQL
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-internet-to-mysql-vm
+  namespace: seckou-dev
+spec:
+  podSelector:
+    matchLabels:
+      kubevirt.io/domain: vm2-mysql
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: nginx-web

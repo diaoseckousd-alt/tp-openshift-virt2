@@ -1,0 +1,223 @@
+---
+# ConfigMap : Configuration Nginx
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: seckou-dev
+data:
+  nginx.conf: |
+    events {
+      worker_connections 1024;
+    }
+    http {
+      upstream nodejs {
+        server 127.0.0.1:3000;
+      }
+      server {
+        listen 80;
+        server_name _;
+        location / {
+          proxy_pass http://nodejs;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+        }
+        location /health {
+          return 200 'Nginx OK';
+          add_header Content-Type text/plain;
+        }
+      }
+    }
+
+  # Application Node.js Express
+  app.js: |
+    const express = require('express');
+    const mysql = require('mysql2');
+    const app = express();
+
+    // Connexion MySQL vers VM2
+    const db = mysql.createConnection({
+      host: process.env.DB_HOST || 'vm2-mysql-service',
+      port: 3306,
+      user: process.env.DB_USER || 'appuser',
+      password: process.env.DB_PASSWORD || 'AppPass123!',
+      database: process.env.DB_NAME || 'appdb'
+    });
+
+    db.connect(err => {
+      if (err) console.error('MySQL connexion erreur:', err.message);
+      else console.log('Connecté à MySQL VM2!');
+    });
+
+    app.get('/', (req, res) => {
+      res.json({
+        status: 'OK',
+        message: 'TP OpenShift - Architecture Hybride',
+        architecture: {
+          'VM1': 'pfSense Firewall (VirtualMachine Fedora)',
+          'VM2': 'MySQL DB (VirtualMachine Fedora)',
+          'Conteneur': 'Nginx + Node.js (Pod OpenShift)'
+        }
+      });
+    });
+
+    app.get('/db', (req, res) => {
+      db.query('SELECT * FROM test_connection', (err, results) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ status: 'DB OK', data: results });
+      });
+    });
+
+    app.get('/health', (req, res) => {
+      res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+    });
+
+    app.listen(3000, () => console.log('Node.js démarré sur port 3000'));
+
+---
+# Secret : Variables d'environnement
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nginx-secret
+  namespace: seckou-dev
+type: Opaque
+stringData:
+  DB_HOST: "vm2-mysql-service"
+  DB_USER: "appuser"
+  DB_PASSWORD: "AppPass123!"
+  DB_NAME: "appdb"
+
+---
+# Deployment : Conteneur Nginx + Node.js
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-web
+  namespace: seckou-dev
+  labels:
+    app: nginx-web
+    role: web-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-web
+  template:
+    metadata:
+      labels:
+        app: nginx-web
+        role: web-server
+    spec:
+      containers:
+        - name: nodejs-app
+          image: node:18-alpine
+          ports:
+            - containerPort: 3000
+          env:
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: nginx-secret
+                  key: DB_HOST
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: nginx-secret
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: nginx-secret
+                  key: DB_PASSWORD
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: nginx-secret
+                  key: DB_NAME
+          command:
+            - /bin/sh
+            - -c
+            - |
+              npm install express mysql2 && node /app/app.js
+          volumeMounts:
+            - name: app-config
+              mountPath: /app/app.js
+              subPath: app.js
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 60
+            periodSeconds: 15
+
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: app-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+
+      volumes:
+        - name: app-config
+          configMap:
+            name: nginx-config
+
+---
+# Service : Exposer Nginx en interne
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-web-service
+  namespace: seckou-dev
+  labels:
+    app: nginx-web
+spec:
+  type: ClusterIP
+  selector:
+    app: nginx-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+
+---
+# Route : Exposer Nginx sur Internet (OpenShift)
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: nginx-web-route
+  namespace: seckou-dev
+  labels:
+    app: nginx-web
+spec:
+  to:
+    kind: Service
+    name: nginx-web-service
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
